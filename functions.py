@@ -1,0 +1,180 @@
+from kivy.core.window import Window
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.button import Button
+from kivy.uix.popup import Popup 
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.textinput import TextInput
+from kivy.clock import Clock
+import sqlite3
+import threading
+from itertools import groupby
+
+
+from custom_widgets import *
+
+def add_card(type,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function):
+    popup_content = BoxLayout(orientation = 'vertical')
+
+    popup = Popup(
+        title = 'Add card',
+        content = popup_content,
+        size_hint=(None, None),
+        size=(500, 700)
+    )
+    popup.open()
+
+    search_bar = TextInput(
+        size_hint = (1, None),
+        height = 50,
+        multiline = False,
+        font_size = 30
+    )
+    popup_content.add_widget(search_bar)
+
+    card_preview = ScrollView(
+        do_scroll_x=True, 
+        do_scroll_y=False, 
+        bar_width = 0,
+        )
+    popup_content.add_widget(card_preview)
+    
+    scroll_surface = GridLayout(rows=1,size_hint_x=None)
+    scroll_surface.bind(minimum_width=scroll_surface.setter('width'))
+    card_preview.add_widget(scroll_surface)
+
+    search_bar.bind(text=lambda instance, value: search(instance, value, scroll_surface,type,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function))
+
+    close_button = Button(
+        text = 'Close',
+        size_hint=(1, None),
+        height = 150
+        )
+    close_button.bind(on_press = popup.dismiss)
+    popup_content.add_widget(close_button)
+
+def send_card(instance,card,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function):
+    final_card = UnitCard(
+        source=card[6],
+        is_hero=card[4],
+        power=card[3],
+        special_effect = card[5],
+        name=card[1],
+        size_hint = (None,None),
+        size = (75,130),
+        mipmap=True,
+        allow_stretch=False,
+        keep_ratio=True,
+        # action=lambda instance: print(handler.faction_power)
+        )
+    widget_surface.add_widget(final_card)
+    unit_list.append(final_card)
+    handler.faction_power = calculate_total(unit_list,weather_status,commander_horn_status)
+    update_score_function()
+
+
+def calculate_total(card_list,weather_status,commander_horn_status):
+    morale_boost_units = [x for x in card_list if x.special_effect == 'Morale Boost']
+
+    tight_bond_units = [x for x in card_list if x.special_effect == 'Tight Bond']
+    tight_bond_units.sort(key=lambda x : x.special_effect)
+    
+    tight_bond_units_sorted = [list(group) for key,group in groupby(tight_bond_units, key=lambda x: x.name)]
+    # print(tight_bond_units_sorted)
+
+    commander_horn_unit = [x for x in card_list if x.name == 'Dandelion']
+
+    non_hero_units = [x for x in card_list if not x.is_hero and x.special_effect == 'none']
+
+    hero_total = sum(x.power for x in card_list if x.is_hero)
+    non_hero_total = sum(x.power for x in non_hero_units)
+    
+
+    if weather_status:
+        non_hero_total = 1 * len(non_hero_units)
+
+    if len(tight_bond_units_sorted) >= 1:
+        for x in tight_bond_units_sorted:
+            if len(x) >= 2:
+                # print("### WE HAVE A PAIR###")
+                non_hero_total += (sum(y.power for y in x) * 2)
+            else:
+                # print("### WE HAVE A SINGLE UNIT###")
+                non_hero_total += (sum(y.power for y in x))
+
+    if morale_boost_units:
+        for x in morale_boost_units:
+            non_hero_total += 1 * (len(non_hero_units) - 1)
+
+    if commander_horn_unit:
+        non_hero_total *= 2
+
+    if commander_horn_status:
+        non_hero_total *= 2
+
+    return hero_total + non_hero_total
+    # score_label.text = (str(total))
+    # print(final_total)
+
+
+def search(instance,value,surface,type,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function):
+    surface.clear_widgets()
+
+    loading_wheel(root=surface)
+
+    threading.Thread(target=fetch_data, args=(value,surface,type,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function)).start()
+
+
+def fetch_data(value,surface,type,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function):
+    result = []
+    # print('Search started')
+
+    if len(value) >= 1:
+        with sqlite3.connect(r"C:\Users\Mihai\OneDrive\Desktop\Projects\Gwent Tracker\card_db.db") as db:
+            cursor = db.cursor()
+            command = f"SELECT * FROM Cards WHERE Name LIKE '{value}%' AND Type LIKE '%{type}%'"
+            cursor.execute(command)
+            result = cursor.fetchall()
+
+    # print('Search finished')
+    # print('Display started')
+
+    Clock.schedule_once(lambda dt: display_data(result, surface, widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function))
+
+def display_data(result,surface,widget_surface,unit_list,handler,weather_status,commander_horn_status,update_score_function):
+    surface.clear_widgets()
+
+    for i in result:
+        # print(i)
+        x = ClickableImage(
+            action=lambda instance, card=i: send_card(instance,card=card,widget_surface=widget_surface,unit_list=unit_list,handler=handler,weather_status=weather_status,commander_horn_status=commander_horn_status,update_score_function=update_score_function),
+            source = i[6],
+            size_hint_x=None,
+            width=250
+            )
+        surface.add_widget(x)  
+
+    # print('Display Finished')      
+
+def loading_wheel(root):
+    loading_icon = Image(
+        source=r"C:\Users\Mihai\OneDrive\Desktop\Projects\Gwent Tracker\witcher_loading_icon-removebg-preview.png",
+        size_hint=(None,None),
+        size = (400,400)
+        )
+    root.add_widget(loading_icon)
+        
+def choose_weather_card(faction):
+    if faction == 'Close Combat':
+        return r"Gwent Tracker\Weather_Cards\page_1_card_7.png"
+    elif faction == "Ranged Combat":
+        return r"Gwent Tracker\Weather_Cards\page_3_card_2.png"
+    else:
+        return r"Gwent Tracker\Weather_Cards\page_1_card_1.png"
+
+def weather_effect(update_score_function,handler):
+    handler.weather_status = not handler.weather_status
+    
+    handler.faction_power = calculate_total(handler.unit_list,handler.weather_status,handler.commander_horn_status)
+    
+    update_score_function()
