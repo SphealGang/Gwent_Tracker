@@ -26,17 +26,25 @@ class Unit():
 
 class Handler(BoxLayout):
     def __init__(self,type,update_score_function, **kwargs):
-        super().__init__(orientation='horizontal', **kwargs)
+        super().__init__(orientation='horizontal', size_hint=(1, None), **kwargs)
 
         self.unit_list = []
         self.faction_power = 0
 
         self.weather_status = False
         self.commander_horn_status = False
+        self.type = type
 
         self.add_card_button = ClickableImage(
-            source=r"Gwent Tracker\card_back.png",
-            action=lambda instance: add_card(type,self.card_view,self.unit_list,self,self.weather_status,self.commander_horn_status,update_score_function), 
+            source=r"Gwent_Tracker\card_back.png",
+            action=lambda instance: add_card(
+                type,
+                self.card_view,
+                self.unit_list,
+                self,
+                self.weather_status,
+                self.commander_horn_status,
+                update_score_function), 
             size_hint = (None,None),
             size = (75,130),
             mipmap=True,
@@ -44,9 +52,11 @@ class Handler(BoxLayout):
             keep_ratio=True
         )
         self.add_widget(self.add_card_button)
-
+        self.height = self.add_card_button.height 
+        
         self.battle_horn = ClickableImage(
-            source = r"C:\Users\Mihai\OneDrive\Desktop\Projects\Gwent Tracker\page_45_card_2.png",
+            source = r"C:\Users\Mihai\OneDrive\Desktop\Projects\Gwent_Tracker\page_45_card_2-modified.png",
+            action= lambda instace: commander_horn_effect(update_score_function,self),
             size_hint = (None,None),
             size = (75,130)     ,
             mipmap=True,
@@ -62,11 +72,23 @@ class Handler(BoxLayout):
             )
         self.add_widget(self.card_scroll_view)
 
-        self.card_view = GridLayout(rows=1,size_hint_x=None)
+        self.card_view = GridLayout(
+            rows=1,
+            size_hint_x=None,
+            height = self.add_card_button.height,
+            width = Window.width
+            )
+        
         self.card_scroll_view.add_widget(self.card_view)
 
+        with self.canvas.before:
+            Color(25/255, 17/255, 10/255, 1)
+            self.rect = Rectangle(size=self.size, pos=self.pos)
+
+        self.bind(size=self._update_rect, pos=self._update_rect)
+
         self.weather_button = ClickableImage(
-            source=choose_weather_card(type),
+            source=choose_weather_card(self.type,self.weather_status),
             action= lambda instace: weather_effect(update_score_function,self),
             size_hint = (None,None),
             size = (75,130),
@@ -76,9 +98,13 @@ class Handler(BoxLayout):
         )
         self.add_widget(self.weather_button)
 
+    def _update_rect(self, instance, value):
+        self.rect.size = instance.size
+        self.rect.pos = instance.pos
+
 class PlayerWidget(BoxLayout):
     def __init__(self,top, **kwargs):
-        super().__init__(orientation='vertical', **kwargs)
+        super().__init__(orientation='vertical', spacing=5, **kwargs)
 
         def update_score():
             total = close_combat_handler.faction_power + ranged_combat_handler.faction_power + siege_handler.faction_power
@@ -106,15 +132,23 @@ class PlayerWidget(BoxLayout):
             self.add_widget(self.score_label)
 
 
-
-
-
 class MainApp(App):
     def build(self):
         root = BoxLayout(
             orientation = 'vertical',
             # size_hint_y = .95
             )
+        
+        with root.canvas.before:
+            Color(45/255, 30/255, 20/255, 1)
+            self.rect = Rectangle(size=Window.size, pos=root.pos)
+
+        def update_rect(instance, value):
+            self.rect.size = instance.size
+            self.rect.pos = instance.pos
+
+        root.bind(size=update_rect, pos=update_rect)
+
         
         root.add_widget(PlayerWidget(top=False))
         root.add_widget(PlayerWidget(top=True))
